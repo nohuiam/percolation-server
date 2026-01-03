@@ -1,0 +1,90 @@
+{
+  "server": {
+    "name": "percolation-server",
+    "version": "1.0.0"
+  },
+  "ports": {
+    "udp": 3030,
+    "http": 8030,
+    "websocket": 9030
+  },
+  "interlock": {
+    "heartbeatInterval": 30000,
+    "timeout": 90000,
+    "maxRetries": 3
+  },
+  "signals": {
+    "listen": [
+      {
+        "code": "0xS0",
+        "name": "SKILL_CREATED",
+        "from": ["skill-builder"],
+        "action": "auto_submit_percolation"
+      },
+      {
+        "code": "0xD0",
+        "name": "VERIFICATION_RESULT",
+        "from": ["verifier-mcp"],
+        "action": "update_confidence"
+      },
+      {
+        "code": "0xE1",
+        "name": "PATTERN_DETECTED",
+        "from": ["consciousness-mcp"],
+        "action": "incorporate_stress_tests"
+      },
+      {
+        "code": "0xF1",
+        "name": "PATTERN_EMERGED",
+        "from": ["experience-layer"],
+        "action": "learn_from_failures"
+      }
+    ],
+    "emit": [
+      {
+        "code": "0xP0",
+        "name": "PERCOLATION_STARTED",
+        "to": ["trinity-coordinator", "consciousness-mcp"]
+      },
+      {
+        "code": "0xP1",
+        "name": "HOLE_FOUND",
+        "to": ["consciousness-mcp", "experience-layer"]
+      },
+      {
+        "code": "0xP2",
+        "name": "HOLE_PATCHED",
+        "to": ["consciousness-mcp"]
+      },
+      {
+        "code": "0xP3",
+        "name": "PERCOLATION_COMPLETE",
+        "to": ["skill-builder", "trinity-coordinator"]
+      },
+      {
+        "code": "0xP4",
+        "name": "PERCOLATION_FAILED",
+        "to": ["skill-builder", "trinity-coordinator"]
+      }
+    ]
+  },
+  "peers": [
+    { "name": "context-guardian", "port": 3001, "role": "validator" },
+    { "name": "skill-builder", "port": 3029, "role": "blueprint_source" },
+    { "name": "verifier-mcp", "port": 3021, "role": "verification" },
+    { "name": "research-bus", "port": 8019, "role": "research", "protocol": "http" },
+    { "name": "consciousness-mcp", "port": 3028, "role": "patterns" },
+    { "name": "experience-layer", "port": 3031, "role": "learning" },
+    { "name": "trinity-coordinator", "port": 3012, "role": "orchestration" }
+  ],
+  "percolation": {
+    "depths": {
+      "quick": { "budget": 1000, "stressTests": 3, "researchQueries": 1 },
+      "standard": { "budget": 5000, "stressTests": 10, "researchQueries": 3 },
+      "thorough": { "budget": 20000, "stressTests": 25, "researchQueries": 10 },
+      "exhaustive": { "budget": 100000, "stressTests": 100, "researchQueries": -1 }
+    },
+    "defaultDepth": "standard",
+    "maxConcurrentPercolations": 5
+  }
+}
