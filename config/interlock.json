@@ -72,6 +72,7 @@
     { "name": "context-guardian", "port": 3001, "role": "validator" },
     { "name": "skill-builder", "port": 3029, "role": "blueprint_source" },
     { "name": "verifier-mcp", "port": 3021, "role": "verification" },
+    { "name": "tenets-server", "port": 3027, "role": "ethics" },
     { "name": "research-bus", "port": 8019, "role": "research", "protocol": "http" },
     { "name": "consciousness-mcp", "port": 3028, "role": "patterns" },
     { "name": "experience-layer", "port": 3031, "role": "learning" },
