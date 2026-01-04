@@ -152,35 +152,12 @@ export interface PercolationResult {
   recommendations: string[];
 }
 
-// InterLock Signal Types - using string codes for signal identification
-export const SignalCodes = {
-  // Incoming
-  SKILL_CREATED: 'S0',
-  VERIFICATION_RESULT: 'D0',
-  PATTERN_DETECTED: 'E1',
-  PATTERN_EMERGED: 'F1',
+// InterLock Signal Types - Re-export from protocol for backwards compatibility
+// The canonical SignalTypes are now defined in interlock/protocol.ts
+export { SignalTypes } from './interlock/protocol';
 
-  // Outgoing
-  PERCOLATION_STARTED: 'P0',
-  HOLE_FOUND: 'P1',
-  HOLE_PATCHED: 'P2',
-  PERCOLATION_COMPLETE: 'P3',
-  PERCOLATION_FAILED: 'P4',
-
-  // Standard
-  HEARTBEAT: '00',
-  ACK: '01',
-  ERROR: 'FF'
-} as const;
-
-export interface InterlockSignal {
-  code: string;
-  source: string;
-  target: string | string[];
-  payload: Record<string, any>;
-  timestamp: string;
-  correlationId?: string;
-}
+// Signal interface for BaNano protocol - Re-export from protocol
+export type { Signal } from './interlock/protocol';
 
 // Percolator Configuration
 export interface PercolatorConfig {

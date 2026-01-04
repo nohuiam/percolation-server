@@ -1,6 +1,6 @@
 import dgram from 'dgram';
 import { EventEmitter } from 'events';
-import { BaNanoProtocol, BaNanoPacket } from './protocol';
+import { Signal, SignalTypes, encode, decode, createSignal, encodeSignal, getSignalName } from './protocol';
 
 export interface InterlockConfig {
   port: number;
@@ -68,7 +68,7 @@ export class InterlockSocket extends EventEmitter {
     });
   }
 
-  send(code: string, target: string | string[], payload: Record<string, any>): void {
+  send(signalType: number, target: string | string[], data: Record<string, unknown>): void {
     if (!this.socket || !this.isRunning) return;
 
     const targets = Array.isArray(target) ? target : [target];
@@ -77,12 +77,7 @@ export class InterlockSocket extends EventEmitter {
       const peer = this.config.peers.find(p => p.name === t);
       if (!peer) continue;
 
-      const buffer = BaNanoProtocol.encode({
-        code,
-        source: this.config.serverName,
-        target: t,
-        payload
-      });
+      const buffer = encode(signalType, this.config.serverName, data);
 
       this.socket.send(buffer, 0, buffer.length, peer.port, '127.0.0.1', (err) => {
         if (err) {
@@ -92,35 +87,27 @@ export class InterlockSocket extends EventEmitter {
     }
   }
 
-  broadcast(code: string, payload: Record<string, any>, exclude?: string[]): void {
+  broadcast(signalType: number, data: Record<string, unknown>, exclude?: string[]): void {
     const targets = this.config.peers
       .filter(p => !exclude || !exclude.includes(p.name))
       .map(p => p.name);
 
-    this.send(code, targets, payload);
+    this.send(signalType, targets, data);
   }
 
   private handleMessage(msg: Buffer, rinfo: dgram.RemoteInfo): void {
-    const packet = BaNanoProtocol.decode(msg);
-    if (!packet) {
-      this.emit('invalid-packet', { from: rinfo.address, port: rinfo.port });
+    const signal = decode(msg);
+    if (!signal) {
+      // Silently ignore invalid/incompatible signals
       return;
     }
 
-    const payload = BaNanoProtocol.decodePayload(packet.payload);
-
-    this.emit('signal', {
-      code: packet.code,
-      source: packet.source,
-      target: packet.target,
-      payload,
-      timestamp: new Date(packet.timestamp).toISOString()
-    });
+    this.emit('signal', signal);
   }
 
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
-      this.broadcast('00', {
+      this.broadcast(SignalTypes.HEARTBEAT, {
         status: 'alive',
         uptime: process.uptime()
       });

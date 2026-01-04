@@ -1,37 +1,40 @@
 // Tumbler - Signal whitelist filtering for InterLock mesh
 
+import { Signal, getSignalName } from './protocol';
+
 export interface SignalFilter {
-  code: string;
+  signalType: number;
   from: string[];
   action: string;
 }
 
 export interface TumblerConfig {
   listenSignals: SignalFilter[];
-  emitSignals: Array<{ code: string; name: string; to: string[] }>;
+  emitSignals: Array<{ signalType: number; name: string; to: string[] }>;
 }
 
 export class Tumbler {
-  private listenFilters: Map<string, SignalFilter> = new Map();
-  private emitTargets: Map<string, string[]> = new Map();
+  private listenFilters: Map<number, SignalFilter> = new Map();
+  private emitTargets: Map<number, string[]> = new Map();
 
   constructor(config: TumblerConfig) {
     for (const filter of config.listenSignals) {
-      this.listenFilters.set(filter.code, filter);
+      this.listenFilters.set(filter.signalType, filter);
     }
 
     for (const emit of config.emitSignals) {
-      this.emitTargets.set(emit.code, emit.to);
+      this.emitTargets.set(emit.signalType, emit.to);
     }
   }
 
-  shouldAccept(code: string, source: string): { accept: boolean; action: string | null } {
-    const filter = this.listenFilters.get(code);
+  shouldAccept(signal: Signal): { accept: boolean; action: string | null } {
+    const filter = this.listenFilters.get(signal.signalType);
 
     if (!filter) {
       return { accept: false, action: null };
     }
 
+    const source = signal.payload.sender;
     if (!filter.from.includes(source) && !filter.from.includes('*')) {
       return { accept: false, action: null };
     }
@@ -39,19 +42,19 @@ export class Tumbler {
     return { accept: true, action: filter.action };
   }
 
-  getEmitTargets(code: string): string[] {
-    return this.emitTargets.get(code) || [];
+  getEmitTargets(signalType: number): string[] {
+    return this.emitTargets.get(signalType) || [];
   }
 
-  canEmit(code: string): boolean {
-    return this.emitTargets.has(code);
+  canEmit(signalType: number): boolean {
+    return this.emitTargets.has(signalType);
   }
 
-  getListenedCodes(): string[] {
+  getListenedTypes(): number[] {
     return Array.from(this.listenFilters.keys());
   }
 
-  getEmittedCodes(): string[] {
+  getEmittedTypes(): number[] {
     return Array.from(this.emitTargets.keys());
   }
 }

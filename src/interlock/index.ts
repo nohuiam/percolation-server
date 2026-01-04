@@ -1,10 +1,9 @@
 import { InterlockSocket, InterlockConfig } from './socket';
 import { Tumbler, TumblerConfig } from './tumbler';
-import { SignalHandlers, SignalPayload } from './handlers';
-import { BaNanoProtocol } from './protocol';
+import { SignalHandlers } from './handlers';
+import { Signal, SignalTypes, encode, decode, createSignal, getSignalName, encodeSignal, decodeSignal, isValidSignal } from './protocol';
 import { DatabaseManager } from '../database/schema';
 import { PercolatorEngine } from '../percolator/engine';
-import { SignalCodes } from '../types';
 import fs from 'fs';
 import path from 'path';
 
@@ -14,6 +13,18 @@ export interface InterlockManagerConfig {
 
 // Singleton instance
 let instance: InterlockManager | null = null;
+
+/**
+ * Parse hex string code to number (e.g., "0x40" -> 64)
+ */
+function parseSignalCode(code: string): number {
+  if (code.startsWith('0x')) {
+    return parseInt(code, 16);
+  }
+  // Try to parse as hex anyway
+  const parsed = parseInt(code, 16);
+  return isNaN(parsed) ? 0 : parsed;
+}
 
 export class InterlockManager {
   private socket: InterlockSocket;
@@ -33,19 +44,19 @@ export class InterlockManager {
     this.socket = new InterlockSocket({
       port: interlockConfig.ports.udp,
       serverName: interlockConfig.server.name,
-      peers: interlockConfig.peers.map((p: any) => ({ name: p.name, port: p.port })),
+      peers: interlockConfig.peers.map((p: { name: string; port: number }) => ({ name: p.name, port: p.port })),
       heartbeatInterval: interlockConfig.interlock.heartbeatInterval,
       timeout: interlockConfig.interlock.timeout
     });
 
     this.tumbler = new Tumbler({
-      listenSignals: interlockConfig.signals.listen.map((s: any) => ({
-        code: s.code.replace('0x', ''),
+      listenSignals: interlockConfig.signals.listen.map((s: { code: string; from: string[]; action: string }) => ({
+        signalType: parseSignalCode(s.code),
         from: s.from,
         action: s.action
       })),
-      emitSignals: interlockConfig.signals.emit.map((s: any) => ({
-        code: s.code.replace('0x', ''),
+      emitSignals: interlockConfig.signals.emit.map((s: { code: string; name: string; to: string[] }) => ({
+        signalType: parseSignalCode(s.code),
         name: s.name,
         to: s.to
       }))
@@ -54,7 +65,7 @@ export class InterlockManager {
     this.handlers = new SignalHandlers(db);
 
     // Wire up signal handling
-    this.socket.on('signal', (signal: SignalPayload) => {
+    this.socket.on('signal', (signal: Signal) => {
       this.handleIncomingSignal(signal);
     });
   }
@@ -78,11 +89,17 @@ export class InterlockManager {
     this.handlers.setPercolator(percolator);
   }
 
-  private loadConfig(configPath: string): any {
+  private loadConfig(configPath: string): {
+    server: { name: string; version: string };
+    ports: { udp: number; http: number; websocket: number };
+    interlock: { heartbeatInterval: number; timeout: number };
+    signals: { listen: Array<{ code: string; from: string[]; action: string }>; emit: Array<{ code: string; name: string; to: string[] }> };
+    peers: Array<{ name: string; port: number }>;
+  } {
     try {
       const content = fs.readFileSync(configPath, 'utf8');
       return JSON.parse(content);
-    } catch (error) {
+    } catch {
       // Return default config if file not found
       return {
         server: { name: 'percolation-server', version: '1.0.0' },
@@ -102,19 +119,17 @@ export class InterlockManager {
     await this.socket.stop();
   }
 
-  private async handleIncomingSignal(signal: SignalPayload): Promise<void> {
-    const { accept, action } = this.tumbler.shouldAccept(signal.code, signal.source);
+  private async handleIncomingSignal(signal: Signal): Promise<void> {
+    const { accept, action } = this.tumbler.shouldAccept(signal);
 
     if (!accept) return;
 
-    if (action) {
-      await this.handlers.handle(action, signal);
-    }
+    await this.handlers.handle(signal);
   }
 
   // Emit signals
   emitPercolationStarted(blueprintId: string, depth: string, budget: number): void {
-    this.emit(SignalCodes.PERCOLATION_STARTED, {
+    this.emit(SignalTypes.PERCOLATION_STARTED, {
       blueprint_id: blueprintId,
       depth,
       budget,
@@ -123,7 +138,7 @@ export class InterlockManager {
   }
 
   emitHoleFound(blueprintId: string, holeId: string, holeType: string, severity: string): void {
-    this.emit(SignalCodes.HOLE_FOUND, {
+    this.emit(SignalTypes.HOLE_FOUND, {
       blueprint_id: blueprintId,
       hole_id: holeId,
       hole_type: holeType,
@@ -132,7 +147,7 @@ export class InterlockManager {
   }
 
   emitHolePatched(blueprintId: string, holeId: string): void {
-    this.emit(SignalCodes.HOLE_PATCHED, {
+    this.emit(SignalTypes.HOLE_PATCHED, {
       blueprint_id: blueprintId,
       hole_id: holeId,
       patched_at: new Date().toISOString()
@@ -140,7 +155,7 @@ export class InterlockManager {
   }
 
   emitPercolationComplete(blueprintId: string, confidenceScore: number): void {
-    this.emit(SignalCodes.PERCOLATION_COMPLETE, {
+    this.emit(SignalTypes.PERCOLATION_COMPLETE, {
       blueprint_id: blueprintId,
       confidence_score: confidenceScore,
       completed_at: new Date().toISOString()
@@ -148,18 +163,18 @@ export class InterlockManager {
   }
 
   emitPercolationFailed(blueprintId: string, error: string): void {
-    this.emit(SignalCodes.PERCOLATION_FAILED, {
+    this.emit(SignalTypes.PERCOLATION_FAILED, {
       blueprint_id: blueprintId,
       error,
       failed_at: new Date().toISOString()
     });
   }
 
-  private emit(code: string, payload: Record<string, any>): void {
-    if (!this.tumbler.canEmit(code)) return;
+  private emit(signalType: number, data: Record<string, unknown>): void {
+    if (!this.tumbler.canEmit(signalType)) return;
 
-    const targets = this.tumbler.getEmitTargets(code);
-    this.socket.send(code, targets, payload);
+    const targets = this.tumbler.getEmitTargets(signalType);
+    this.socket.send(signalType, targets, data);
   }
 
   isActive(): boolean {
@@ -171,5 +186,18 @@ export class InterlockManager {
   }
 }
 
-export { InterlockSocket, Tumbler, SignalHandlers, BaNanoProtocol };
+// Export protocol functions and types
+export {
+  encode,
+  decode,
+  encodeSignal,
+  decodeSignal,
+  createSignal,
+  getSignalName,
+  isValidSignal,
+  SignalTypes,
+  Signal
+} from './protocol';
+
+export { InterlockSocket, Tumbler, SignalHandlers };
 export default InterlockManager;
