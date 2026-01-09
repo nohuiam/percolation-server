@@ -84,8 +84,14 @@ export class DatabaseManager {
     const dbPath = path.join(this.dataDir, 'percolation.db');
     this.db = new Database(dbPath);
 
-    // Enable WAL mode for better concurrent access
-    this.db.pragma('journal_mode = WAL');
+    // Use DELETE mode for tests (avoids WAL lock conflicts)
+    // WAL mode for production (better concurrent performance)
+    const isTest = process.env.NODE_ENV === 'test' || dataDir?.includes('test');
+    if (isTest) {
+      this.db.pragma('journal_mode = DELETE');
+    } else {
+      this.db.pragma('journal_mode = WAL');
+    }
 
     this.initSchema();
   }
@@ -219,7 +225,8 @@ export class DatabaseManager {
 
   getBlueprint(id: string): Blueprint | null {
     const stmt = this.db.prepare('SELECT * FROM blueprints WHERE id = ?');
-    return stmt.get(id) as Blueprint | null;
+    const result = stmt.get(id) as Blueprint | undefined;
+    return result ?? null;
   }
 
   updateBlueprintContent(id: string, content: string, tokensUsed: number = 0): void {
@@ -443,7 +450,7 @@ export class DatabaseManager {
     const stmt = this.db.prepare(`
       DELETE FROM blueprints
       WHERE (status = 'completed' OR status = 'failed')
-      AND completed_at < ?
+      AND completed_at <= ?
     `);
 
     const result = stmt.run(cutoffStr);

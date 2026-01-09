@@ -36,6 +36,7 @@ export class PercolatorEngine extends EventEmitter {
       },
       defaultDepth: 'standard',
       maxConcurrentPercolations: 5,
+      timeoutMs: 300000, // 5 minutes default
       ...config
     };
   }
@@ -95,13 +96,35 @@ export class PercolatorEngine extends EventEmitter {
     let researchQueriesUsed = 0;
     const maxResearchQueries = depthConfig.researchQueries === -1 ? Infinity : depthConfig.researchQueries;
 
+    // SAFETY: Track start time for wall-clock timeout
+    const startTime = Date.now();
+    const timeoutMs = this.config.timeoutMs;
+    let timedOut = false;
+
     this.db.log(blueprintId, 'PERCOLATION_LOOP_START', {
       max_iterations: maxIterations,
       budget: blueprint.budget_tokens,
-      depth: blueprint.depth
+      depth: blueprint.depth,
+      timeout_ms: timeoutMs
     });
 
     while (iteration < maxIterations) {
+      // SAFETY: Check wall-clock timeout at start of each iteration
+      const elapsedMs = Date.now() - startTime;
+      if (elapsedMs >= timeoutMs) {
+        timedOut = true;
+        this.db.log(blueprintId, 'PERCOLATION_TIMEOUT', {
+          elapsed_ms: elapsedMs,
+          timeout_ms: timeoutMs,
+          iterations_completed: iteration
+        });
+        this.sendEvent('percolation_timeout', blueprintId, {
+          elapsed_ms: elapsedMs,
+          timeout_ms: timeoutMs,
+          iterations_completed: iteration
+        });
+        break;
+      }
       // Check budget
       const currentBlueprint = this.db.getBlueprint(blueprintId)!;
       const remainingBudget = currentBlueprint.budget_tokens - currentBlueprint.tokens_used;
@@ -183,8 +206,15 @@ export class PercolatorEngine extends EventEmitter {
       }
     }
 
-    // Calculate final confidence score
-    const confidenceScore = this.calculateConfidence(blueprintId);
+    // Calculate final confidence score (penalize if timed out)
+    let confidenceScore = this.calculateConfidence(blueprintId);
+    if (timedOut) {
+      // Apply 20% penalty for timeout - incomplete percolation is less reliable
+      confidenceScore = Math.max(0, confidenceScore * 0.8);
+    }
+
+    // Calculate total elapsed time
+    const totalElapsedMs = Date.now() - startTime;
 
     // Mark as completed
     this.db.updateBlueprintStatus(blueprintId, 'completed', confidenceScore);
@@ -192,12 +222,16 @@ export class PercolatorEngine extends EventEmitter {
     this.db.log(blueprintId, 'PERCOLATION_COMPLETE', {
       iterations: iteration,
       research_queries: researchQueriesUsed,
-      final_confidence: confidenceScore
+      final_confidence: confidenceScore,
+      timed_out: timedOut,
+      elapsed_ms: totalElapsedMs
     });
 
     this.sendEvent('percolation_complete', blueprintId, {
       confidence_score: confidenceScore,
-      iterations: iteration
+      iterations: iteration,
+      timed_out: timedOut,
+      elapsed_ms: totalElapsedMs
     });
   }
 

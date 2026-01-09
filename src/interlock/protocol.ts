@@ -14,6 +14,14 @@ const PROTOCOL_VERSION = 0x0100;
 
 // Signal type codes - numeric mapping for BaNano protocol
 export const SignalTypes = {
+  // Core signals (ecosystem aligned)
+  DOCK_REQUEST: 0x01,
+  DOCK_APPROVE: 0x02,
+  DOCK_REJECT: 0x03,
+  HEARTBEAT: 0x04,
+  DISCONNECT: 0x05,
+  ACK: 0x08,
+
   // Incoming signals
   SKILL_CREATED: 0xA0,
   VERIFICATION_RESULT: 0xD0,
@@ -27,9 +35,7 @@ export const SignalTypes = {
   PERCOLATION_COMPLETE: 0x43,
   PERCOLATION_FAILED: 0x44,
 
-  // Standard signals
-  HEARTBEAT: 0x00,
-  ACK: 0x01,
+  // Error signals
   ERROR: 0xFF
 } as const;
 
