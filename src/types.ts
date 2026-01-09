@@ -169,6 +169,7 @@ export interface PercolatorConfig {
   };
   defaultDepth: DepthLevel;
   maxConcurrentPercolations: number;
+  timeoutMs: number; // Wall-clock timeout for percolation loop (default 5 minutes)
 }
 
 // WebSocket Event Types
@@ -187,6 +188,7 @@ export const WSEventTypes = {
   OPTIMIZATION_APPLIED: 'optimization_applied',
   PERCOLATION_COMPLETE: 'percolation_complete',
   PERCOLATION_FAILED: 'percolation_failed',
+  PERCOLATION_TIMEOUT: 'percolation_timeout',
   PING: 'ping',
   PONG: 'pong'
 } as const;

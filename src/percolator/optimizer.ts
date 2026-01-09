@@ -1,6 +1,10 @@
 import { DatabaseManager, Hole } from '../database/schema';
 import { HoleTypes } from '../types';
 
+// Content size limits to prevent unbounded memory growth
+const MAX_CONTENT_SIZE_BYTES = 102400; // 100KB default
+const MAX_PATCH_SIZE_BYTES = 10240;    // 10KB max per patch
+
 interface ResearchResult {
   source: string;
   description: string;
@@ -11,9 +15,13 @@ interface ResearchResult {
 
 export class Optimizer {
   private db: DatabaseManager;
+  private maxContentSize: number;
+  private maxPatchSize: number;
 
-  constructor(db: DatabaseManager) {
+  constructor(db: DatabaseManager, options?: { maxContentSize?: number; maxPatchSize?: number }) {
     this.db = db;
+    this.maxContentSize = options?.maxContentSize ?? MAX_CONTENT_SIZE_BYTES;
+    this.maxPatchSize = options?.maxPatchSize ?? MAX_PATCH_SIZE_BYTES;
   }
 
   async researchForHole(blueprintId: string, hole: Hole): Promise<ResearchResult | null> {
@@ -49,9 +57,22 @@ export class Optimizer {
       throw new Error('Hole does not belong to this blueprint');
     }
 
+    // SAFETY: Validate patch size
+    const patchBytes = Buffer.byteLength(patch, 'utf8');
+    if (patchBytes > this.maxPatchSize) {
+      throw new Error(`Patch too large: ${patchBytes} bytes exceeds limit of ${this.maxPatchSize}`);
+    }
+
     // Apply the patch
     const patchMarker = `\n\n<!-- FIX: ${hole.hole_type} -->\n`;
     const newContent = blueprint.current_content + patchMarker + patch;
+
+    // SAFETY: Validate resulting content size
+    const newContentBytes = Buffer.byteLength(newContent, 'utf8');
+    if (newContentBytes > this.maxContentSize) {
+      throw new Error(`Content would exceed size limit: ${newContentBytes} bytes > ${this.maxContentSize} bytes. Consider completing the blueprint.`);
+    }
+
     const tokensUsed = this.estimateTokens(patch);
 
     // Update blueprint
@@ -65,6 +86,7 @@ export class Optimizer {
       hole_id: holeId,
       hole_type: hole.hole_type,
       patch_length: patch.length,
+      patch_bytes: patchBytes,
       tokens_used: tokensUsed
     });
 
@@ -82,6 +104,12 @@ export class Optimizer {
       throw new Error(`Blueprint not found: ${blueprintId}`);
     }
 
+    // SAFETY: Validate content size
+    const contentBytes = Buffer.byteLength(content, 'utf8');
+    if (contentBytes > this.maxPatchSize) {
+      throw new Error(`Optimization content too large: ${contentBytes} bytes exceeds limit of ${this.maxPatchSize}`);
+    }
+
     const tokensUsed = this.estimateTokens(content);
     const remainingBudget = blueprint.budget_tokens - blueprint.tokens_used;
 
@@ -92,6 +120,12 @@ export class Optimizer {
     // Apply optimization
     const optMarker = `\n\n<!-- OPTIMIZATION: ${source} -->\n`;
     const newContent = blueprint.current_content + optMarker + content;
+
+    // SAFETY: Validate resulting content size
+    const newContentBytes = Buffer.byteLength(newContent, 'utf8');
+    if (newContentBytes > this.maxContentSize) {
+      throw new Error(`Content would exceed size limit: ${newContentBytes} bytes > ${this.maxContentSize} bytes. Consider completing the blueprint.`);
+    }
 
     // Update blueprint
     this.db.updateBlueprintContent(blueprintId, newContent, tokensUsed);

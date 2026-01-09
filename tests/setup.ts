@@ -28,9 +28,13 @@ export function cleanupTestEnvironment() {
   }
 }
 
+// Counter to ensure unique database paths even when tests run in same millisecond
+let dbCounter = 0;
+
 // Get a fresh database for testing
 export function getTestDatabase(): DatabaseManager {
-  const dbDir = path.join(TEST_DATA_DIR, `db-${Date.now()}`);
+  dbCounter++;
+  const dbDir = path.join(TEST_DATA_DIR, `db-${Date.now()}-${dbCounter}-${Math.random().toString(36).slice(2, 8)}`);
   return new DatabaseManager(dbDir);
 }
 
